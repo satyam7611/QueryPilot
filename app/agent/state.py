@@ -35,3 +35,6 @@ class AgentState(TypedDict):
     
     # Final Output
     final_answer: Optional[str]
+    
+    # Dataset Context
+    dataset_id: Optional[str]

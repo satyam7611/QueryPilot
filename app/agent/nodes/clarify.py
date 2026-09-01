@@ -21,7 +21,9 @@ def ask_clarification(state: AgentState) -> dict:
         "clarification_response": str(user_choice)
     }
 
-def merge_clarification(state: AgentState) -> dict:
+from langchain_core.runnables import RunnableConfig
+
+def merge_clarification(state: AgentState, config: RunnableConfig) -> dict:
     """
     Takes the user's choice and merges it with the original question
     to create a single, clear, clarified intent query.
@@ -51,8 +53,11 @@ def merge_clarification(state: AgentState) -> dict:
         {"role": "user", "content": prompt}
     ]
     
+    # Extract request-scoped api key
+    api_key = config.get("configurable", {}).get("api_key")
+    
     # Call LLM to merge
-    clarified_intent = query_llm(messages=messages, temperature=0.0)
+    clarified_intent = query_llm(messages=messages, temperature=0.0, api_key=api_key)
     print(f" - Clarified Intent: '{clarified_intent}'")
     
     return {

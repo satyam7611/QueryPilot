@@ -12,6 +12,7 @@ def validate_sql(state: AgentState) -> dict:
     """
     sql = state.get("generated_sql")
     retries = state.get("retry_count", 0)
+    dataset_id = state.get("dataset_id")
     print(f"\n[Node: validate_sql] Validating SQL query (Attempt {retries + 1}/2)...")
     
     if not sql:
@@ -22,7 +23,16 @@ def validate_sql(state: AgentState) -> dict:
         }
         
     # 1. Static Guardrail Check
-    is_safe, guardrail_error = is_safe_sql(sql)
+    if dataset_id:
+        from app.services.dataset_service import get_dataset_table_name
+        try:
+            table_name = get_dataset_table_name(dataset_id)
+            is_safe, guardrail_error = is_safe_sql(sql, allowed_tables={table_name})
+        except Exception as e:
+            is_safe, guardrail_error = False, f"Failed to verify dataset metadata: {e}"
+    else:
+        is_safe, guardrail_error = is_safe_sql(sql)
+        
     if not is_safe:
         print(f" - Guardrail Block: {guardrail_error}")
         return {

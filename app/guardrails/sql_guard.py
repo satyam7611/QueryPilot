@@ -17,7 +17,7 @@ FORBIDDEN_KEYWORDS = [
     r"\bREVOKE\b"
 ]
 
-def is_safe_sql(sql_query: str) -> tuple[bool, str | None]:
+def is_safe_sql(sql_query: str, allowed_tables: set[str] = ALLOWED_TABLES) -> tuple[bool, str | None]:
     """
     Statically analyzes a SQL query for safety.
     Returns (True, None) if safe, or (False, "reason") if unsafe.
@@ -52,7 +52,7 @@ def is_safe_sql(sql_query: str) -> tuple[bool, str | None]:
     for cte in cte_matches:
         ctes.add(cte.lower())
         
-    local_allowed = ALLOWED_TABLES.union(ctes)
+    local_allowed = allowed_tables.union(ctes)
     
     # Extract words that look like table references following FROM or JOIN
     matches = re.findall(r"\b(?:FROM|JOIN)\s+([a-zA-Z0-9_\"'\.]+)", sql_query, re.IGNORECASE)

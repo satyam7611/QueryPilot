@@ -1,204 +1,154 @@
-# QueryPilot: Stateful, Cyclic Text-to-SQL Agent with Clarification & Guardrails
+# QueryPilot: Stateful, Cyclic Text-to-SQL Agent Web Application
 
-QueryPilot is a terminal-based, state-driven Natural Language-to-SQL agentic system built using **LangGraph**. It is designed to explore and solve the key reliability, safety, and correctness challenges of naive Text-to-SQL systems. 
+QueryPilot is a production-ready, deployable web application that transforms natural language questions into safe, optimized SQL queries using a stateful, cyclic agent workflow built on **LangGraph**.
 
-Instead of trusting an LLM with a single prompt-to-execution query, QueryPilot wraps the model in a **7-layer stateful workflow** that handles context filtering, conversational ambiguity resolution, static regex guardrails, database compilation testing, and automatic syntax error self-correction.
-
----
-
-## 🚀 Key Features
-
-*   **Ambiguity Clarification Engine:** Detects vague business metrics (e.g., *"Who was the best customer?"*) and pauses execution natively using LangGraph interrupts. It prompts the user for clarification, merges the consolidated intent, and resumes execution seamlessly.
-*   **Schema RAG Layer:** Embeds query intents using `gemini-embedding-001` and retrieves only the top $k=3$ most relevant table DDL schemas via cosine similarity, preventing context bloat and model hallucination.
-*   **Static Guardrail Scanner:** Analyzes SQL statements prior to compilation, blocking dangerous write keywords (`DROP`, `DELETE`, `ALTER`, etc.), multiple semicolon statements (injection attempts), and access to unauthorized tables.
-*   **Dynamic EXPLAIN Validation:** Compiles generated queries in a database transaction using PostgreSQL's `EXPLAIN` engine, verifying schema and syntax correctness without executing the query.
-*   **Self-Correction Loop:** Catches compile-time and execution errors, feeding the database trace and incorrect SQL back to the LLM to automatically repair bugs (capped at 2 retries).
-*   **Decoupled Database Tool:** Decouples DB operations into a sandboxed, read-only LangChain tool.
-*   **Offline Evaluation Harness:** Benchmarks QueryPilot against a naive Text-to-SQL baseline across 10 categories, logging detailed latency and success metrics.
+The system supports a default e-commerce dataset (demo database mode) and allows users to upload custom datasets (CSV/XLSX), dynamically inspect inferred schemas, ask relational queries against isolated custom tables, and supply their own API keys (BYOK) securely.
 
 ---
 
-## 🏗️ 7-Layer Architecture Flow
+## 🏗️ System Architecture
 
-```mermaid
-flowchart TD
-    Start([User Query Entered]) --> NodeAnalyze[1. Prompt Analysis Layer]
-    NodeAnalyze --> RouteAnalysis{Is Out-of-Domain / Ambiguous?}
-
-    RouteAnalysis -- Out-of-Domain --> NodeOutDomain[Graceful Rejection] --> End([END])
-
-    RouteAnalysis -- Ambiguous --> NodeAskClarify[2. Clarification Node]
-    NodeAskClarify -- "Interrupt / Wait for Input" --> ResumeChoice[User Selection]
-    ResumeChoice -- "Command(resume)" --> NodeMergeClarify[Consolidate Intent]
-    NodeMergeClarify --> NodeRetrieveSchema[3. Schema RAG Layer]
-
-    RouteAnalysis -- Clear --> NodeRetrieveSchema
-    NodeRetrieveSchema --> NodeGenerateSQL[4. SQL Generation & Guardrails]
-
-    NodeGenerateSQL --> NodeValidateSQL[5. SQL Validation Node]
-    NodeValidateSQL --> RouteValidation{Does EXPLAIN Compile?}
-
-    RouteValidation -- No (Retry < 2) --> NodeGenerateSQL
-    RouteValidation -- No (Retry >= 2) --> NodeGenerateAnswer[6. Synthesis Layer]
-    RouteValidation -- Yes --> NodeExecuteSQL[7. Database Execution Layer]
-
-    NodeExecuteSQL --> NodeGenerateAnswer
-    NodeGenerateAnswer --> End
+```
+                                +-----------------------------------+
+                                |            React UI               |
+                                |       (Vite Client Server)        |
+                                +-----------------+-----------------+
+                                                  | (REST API / CORS)
+                                                  v
+                                +-----------------+-----------------+
+                                |         FastAPI Backend           |
+                                |     (Endpoints & Services)        |
+                                +-----------------+-----------------+
+                                                  |
+                        +-------------------------+-------------------------+
+                        |                                                   |
+                        v (Demo Mode)                                       v (Custom Dataset Mode)
+              +---------+---------+                               +---------+---------+
+              |    Demo Dataset   |                               |  Isolated User Table |
+              |  (E-Commerce DB)  |                               |   (dataset_uuid)  |
+              +-------------------+                               +-------------------+
 ```
 
----
+The Text-to-SQL engine runs a stateful 7-layer workflow:
 
-## 🧰 Technology Stack
-
-*   **Orchestrator:** `langgraph` (stateful loops, MemorySaver checkpointer, and interrupts)
-*   **LLM Gateway:** `litellm` (LLM gateway, structured response binding, and backoff handlers)
-*   **Models:** `gemini/gemini-3.5-flash` (reasoning/analysis) & `gemini-embedding-001` (RAG)
-*   **Structured Schemas:** `pydantic` (JSON schema formatting)
-*   **Database:** `PostgreSQL` (Relational store)
-*   **Database Connector:** `psycopg` (v3 PostgreSQL driver)
-*   **Testing:** `pytest` (Regression testing)
+1. **Prompt Analysis:** Classifies queries for ambiguity or out-of-domain scope dynamically.
+2. **Clarification Node:** Halts execution (using LangGraph interrupts) if the question is ambiguous, requesting user input.
+3. **Schema Retrieval (RAG):** Cosine vector similarity on `gemini-embedding-001` fetches the top 3 relevant tables for demo mode. Custom dataset mode loads the dynamic table DDL schema directly.
+4. **SQL Generation:** Generates read-only PostgreSQL statements using schema DDL context.
+5. **SQL Validation:** Performs static regex safety validation and dynamic `EXPLAIN` query compilations.
+6. **Database Execution:** Executes validated SELECT statements against the target tables using `psycopg`.
+7. **Answer Synthesis:** Explains query output rows in a natural, business-focused response.
 
 ---
 
-## 📂 Project Structure
+## 🛠️ Tech Stack
 
-```text
-QueryPilot/
-├── app/
-│   ├── agent/
-│   │   ├── nodes/              # LangGraph execution steps (analyze, clarify, retrieve, generate, etc.)
-│   │   ├── graph.py            # LangGraph state machine topology
-│   │   └── state.py            # Global AgentState typed variables
-│   ├── guardrails/             # Static SQL safety scanner
-│   ├── llm/                    # Central gateway connection & backoff handler
-│   ├── prompts/                # LLM System Prompts
-│   ├── rag/                    # Schema embedding index, cache, and vector search
-│   ├── schemas/                # Structured Pydantic outputs
-│   ├── tools/                  # Read-only database connection execution tool
-│   ├── utils/                  # Sanitized trace log recorder
-│   └── main.py                 # Core CLI Application entrypoint
-├── database/
-│   ├── schema.sql              # Relational layout (5 core tables)
-│   ├── seed.sql                # E-commerce seed data
-│   └── setup_db.py             # Automatic database builder & seeder
-├── evaluation/
-│   ├── dataset.json            # 100-query benchmark dataset
-│   ├── evaluator.py            # Benchmark execution runner (Baseline vs Agent)
-│   └── results.json            # Output logs from evaluation runs
-├── tests/                      # Pytest unit tests (guardrails, schemas, tool)
-├── .env.example                # Template configuration file
-├── .gitignore                  # Git tracking exclusions
-├── baseline.py                 # Naive, non-agentic baseline Text-to-SQL script
-└── requirements.txt            # Python dependencies
-```
+* **Frontend:** React 18, Vite, Vanilla CSS (Glassmorphism layout, responsive cards, loader animations).
+* **Backend:** FastAPI, Uvicorn, Python 3.12.
+* **Orchestration & State:** LangGraph (checkpoints, interrupts, and transient config context).
+* **LLM Gateway:** LiteLLM (`gemini/gemini-3.5-flash` model, backoff quota retries).
+* **Database:** PostgreSQL, Psycopg 3 (v3 driver).
+* **Utilities:** Pydantic (JSON bindings), OpenPyXL (Excel parsing), Dotenv (environments).
+* **Testing:** Pytest, FastAPI TestClient.
 
 ---
 
-## ⚙️ Setup Instructions
+## 🔒 Security Measures & Key Management
+
+* **BYOK Scoped Keys:** User-provided API keys are request-scoped. They are kept in memory and passed in the headers of calls. They are **never** stored in the database, logged in telemetry, printed to files, or committed.
+* **Graph Key Propagation:** The key is passed via the LangGraph `RunnableConfig` (`configurable` dictionary). Checkpointers (`MemorySaver`) do not serialize this transient configuration, keeping the key completely isolated from logs.
+* **SQL Injection & DDL Blockers:** Static guardrails block write keywords (`DROP`, `DELETE`, `ALTER`, `TRUNCATE`, etc.), multiple statement semicolons, and restrict queries *strictly* to authorized tables.
+* **Dataset Session Isolation:** Uploaded custom files are seeded into tables named `dataset_<uuid>`. Column headers are sanitized into safe SQL identifiers. A secure, anonymous session cookie (`querypilot_session`) associates datasets with specific browsers, preventing cross-tenant access.
+
+---
+
+## 🛜 REST API Endpoints
+
+### Health Check
+
+* `GET /health`: Returns health status.
+
+### Custom Datasets
+
+* `POST /api/datasets/upload`: Accepts CSV/XLSX files, validates sizes (<10MB), infers datatypes, creates tables, and bulk inserts data.
+* `GET /api/datasets/{dataset_id}/schema`: Retrieves dynamic DDL mapping for prompts and UI explorers.
+* `DELETE /api/datasets/{dataset_id}`: Drops the table and metadata.
+
+### Query Engine
+
+* `POST /api/query`: Submits natural language questions for both demo and custom dataset modes.
+* `POST /api/query/resume`: Resumes a paused clarification interrupt thread.
+
+---
+
+## ⚙️ Setup & Run Instructions
 
 ### 1. Prerequisites
-*   Python 3.12 or higher.
-*   PostgreSQL running locally or on Docker.
-*   Google Gemini API Key (or other LiteLLM-supported provider API keys).
 
-### 2. Clone the Repository
-```bash
-git clone https://github.com/<your-username>/QueryPilot.git
-cd QueryPilot
-```
+* Python 3.12
+* Node.js (v18+)
+* PostgreSQL running locally or in Docker.
 
-### 3. Create a Virtual Environment & Install Dependencies
-Create a virtual environment and install the required modules:
-```bash
-python -m venv .venv
-# On Windows (Command Prompt/PowerShell):
-.venv\Scripts\activate
-# On macOS/Linux:
-source .venv/bin/activate
+### 2. Configure Environment Variables
 
-pip install -r requirements.txt
-```
+Create a `.env` file in the root directory:
 
-### 4. Configure Environment Variables
-Copy `.env.example` to `.env` and fill in your details:
-```bash
-cp .env.example .env
-```
-Open `.env` and configure:
 ```env
-# Gemini API Configuration
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Database Configuration
+# Database Credentials
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=postgres
-DB_PASSWORD=your_postgres_password_here
+DB_PASSWORD=your_postgres_password
 DB_NAME=querypilot
+
+# Default Gemini API Key (Fallback if user does not provide key)
+GEMINI_API_KEY=AIzaSy...
+
+# CORS configuration (comma separated origins for production)
+CORS_ORIGINS=http://localhost:5173
 ```
 
-### 5. Initialize & Seed the Database
-Run the setup script to create the `querypilot` database, create the tables (`customers`, `products`, `orders`, `order_items`, `payments`), and insert the seed data:
+### 3. Initialize PostgreSQL Database
+
+Seed the e-commerce demo dataset:
+
 ```bash
 python database/setup_db.py
 ```
 
----
+### 4. Run the Backend (FastAPI)
 
-## 🏃 Run Instructions
+Install dependencies and launch the dev server:
 
-### 1. Run the Stateful Agent CLI
-To start the QueryPilot agent shell interface:
 ```bash
-python app/main.py
-```
-Type any business query and press **Enter**. To exit the application, type `exit` or `quit`.
-
-### 2. Run the Naive Baseline Script (Standalone)
-To run the naive baseline pipeline directly (no agent loops or safety validations):
-```bash
-python baseline.py
+uv pip install -r requirements.txt
+uvicorn app.web_main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 3. Run the Evaluation Suite
-To run the offline benchmarking script comparing QueryPilot and the Baseline:
-```bash
-python evaluation/evaluator.py
-```
-This runs a sanity-check subset of queries to verify both pipelines and writes the performance summary metrics to `evaluation_report.md`.
+### 5. Run the Frontend (React + Vite)
 
-### 4. Run Unit Tests
-Verify the code safety guardrails and Pydantic schemas using Pytest:
+In a separate terminal, install packages and launch the client dev server:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173` in your browser.
+
+### 6. Run Unit & Integration Tests
+
+Verify agent code, RAG, and Web API routes:
+
 ```bash
 python -m pytest
 ```
 
 ---
 
-## 🔍 Examples to Test
+## ⚠️ Known Limitations
 
-Try these queries inside the running agent (`python app/main.py`) to observe individual system transitions:
-
-### 1. Standard Query
-*   *Query:* `How many customers signed up in 2026?`
-    *   *Path:* Resolves intent directly, retrieves `customers` schema via RAG, writes SQL, validates, executes, and returns a natural language summary.
-
-### 2. Ambiguity Clarification
-*   *Query:* `Who is the best customer?`
-    *   *Path:* The agent detects ambiguity, halts the execution thread, and asks you:
-        ```text
-        Agent: How would you like to define the best customer?
-          [1] Highest total spending
-          [2] Most orders placed
-          [3] Highest average order value
-        You: 1
-        ```
-        It consolidates your selection and resumes the database workflow.
-
-### 3. SQL Injection / Write Guardrails
-*   *Query:* `SELECT * FROM customers; DROP TABLE payments;`
-    *   *Path:* The static guardrail intercepts this, flags the semicolon injection attempt, and rejects execution before it compiles.
-
-### 4. Out-of-Domain Rejection
-*   *Query:* `Who won the world cup in 2022?`
-    *   *Path:* The question analyzer classifies this as out-of-domain and triggers a friendly domain boundary rejection message.
+1. **Row Limits:** Database result previews are capped at 50 rows to protect memory limits.
+2. **Anonymous Sessions:** Anonymous session cookie validation isolates datasets. Clearing browser cookies will reset the active session index.
+3. **Flat Files Only:** Custom datasets are limited to single-table flat files (one CSV or Excel sheet). Relational multi-table custom uploads are not supported in this version.

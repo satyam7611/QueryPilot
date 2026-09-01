@@ -1,6 +1,7 @@
 import os
 import json
 import math
+from typing import Optional
 from app.rag.schema_docs import SCHEMA_CARDS
 from app.rag.embeddings import get_embedding
 
@@ -61,15 +62,16 @@ class SchemaRetriever:
         except Exception as e:
             print(f"[SchemaRetriever] Failed to write cache: {e}")
 
-    def retrieve(self, query: str, k: int = 3) -> str:
+    def retrieve(self, query: str, k: int = 3, api_key: Optional[str] = None) -> str:
         """
         Embeds the query, calculates similarity with all schema cards,
         and returns the top k relevant DDL blocks combined.
         """
+        from typing import Optional
         print(f"[SchemaRetriever] Searching schema for query: '{query}'...")
         
         # Get query vector representation
-        query_vector = get_embedding(query)
+        query_vector = get_embedding(query, api_key=api_key)
         
         # Calculate similarity scores
         scores = []
@@ -98,9 +100,10 @@ class SchemaRetriever:
 # Instantiated single retriever instance
 _retriever = None
 
-def retrieve_relevant_schema(query: str, k: int = 3) -> str:
+def retrieve_relevant_schema(query: str, k: int = 3, api_key: Optional[str] = None) -> str:
     """Helper functional interface to call retriever."""
+    from typing import Optional
     global _retriever
     if _retriever is None:
         _retriever = SchemaRetriever()
-    return _retriever.retrieve(query, k=k)
+    return _retriever.retrieve(query, k=k, api_key=api_key)

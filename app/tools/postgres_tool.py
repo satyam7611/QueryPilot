@@ -31,21 +31,34 @@ def execute_readonly_sql(sql_query: str) -> str:
             dbname=dbname
         )
         with conn.cursor() as cur:
+            # Set query execution statement timeout to 15 seconds (15000 ms)
+            cur.execute("SET statement_timeout = 15000;")
+            
             cur.execute(sql_query)
             
             # Retrieve description to check if query returned rows (e.g. SELECT)
             if cur.description:
                 colnames = [desc[0] for desc in cur.description]
-                rows = cur.fetchall()
+                # Fetch up to 51 rows to detect truncation safely
+                rows = cur.fetchmany(51)
                 
                 # Format output as a readable table string
                 if not rows:
                     return "Query returned 0 rows."
                 
+                truncated = False
+                if len(rows) > 50:
+                    rows = rows[:50]
+                    truncated = True
+                
                 result_str = " | ".join(colnames) + "\n"
                 result_str += "-" * len(result_str) + "\n"
                 for row in rows:
                     result_str += " | ".join(str(val) for val in row) + "\n"
+                
+                if truncated:
+                    result_str += "... (results truncated to top 50 rows)\n"
+                    
                 return result_str.strip()
             else:
                 conn.commit()
