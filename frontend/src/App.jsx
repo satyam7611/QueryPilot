@@ -26,6 +26,7 @@ export default function App() {
   const [rawTableData, setRawTableData] = useState('');
   const [parsedTable, setParsedTable] = useState({ headers: [], rows: [] });
   const [errorMessage, setErrorMessage] = useState('');
+  const [copiedSql, setCopiedSql] = useState(false);
   
   // Clarification states
   const [clarificationQuestion, setClarificationQuestion] = useState('');
@@ -264,29 +265,30 @@ export default function App() {
           </div>
           
           {/* BYOK Configuration Control */}
-          <div className="glass-card" style={{ padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>API Provider:</span>
-            <div className="pill-group" style={{ margin: 0 }}>
-              <div 
+          <div className="glass-card header-controls">
+            <span className="header-controls-label">API Provider:</span>
+            <div className="pill-group">
+              <button 
+                type="button"
                 className={`pill-btn ${apiKeyMode === 'demo' ? 'active' : ''}`}
                 onClick={() => setApiKeyMode('demo')}
               >
                 QueryPilot Demo Key
-              </div>
-              <div 
+              </button>
+              <button 
+                type="button"
                 className={`pill-btn ${apiKeyMode === 'byok' ? 'active' : ''}`}
                 onClick={() => setApiKeyMode('byok')}
               >
                 Use My API Key
-              </div>
+              </button>
             </div>
             
             {apiKeyMode === 'byok' && (
               <input 
                 type="password" 
-                placeholder="Enter Gemini API Key..."
-                className="text-input"
-                style={{ width: '220px', padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                placeholder="Enter Gemini / Groq API Key..."
+                className="text-input byok-input"
                 value={byokKey}
                 onChange={(e) => setByokKey(e.target.value)}
               />
@@ -298,12 +300,12 @@ export default function App() {
         <main className="dashboard-grid">
           
           {/* Sidebar Panel: Data & Schemas */}
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <section className="sidebar-section">
             
             {/* Dataset Seeding card */}
             <div className="glass-card glow-card">
               <h3 style={{ marginBottom: '0.25rem' }}>Datasets</h3>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem', wordBreak: 'break-word' }}>
                 Active: <span style={{ color: '#a78bfa', fontWeight: 600 }}>{activeFilename}</span>
               </p>
               
@@ -331,8 +333,8 @@ export default function App() {
               )}
               
               {uploadError && (
-                <div style={{ color: 'var(--danger)', fontSize: '0.85rem', marginTop: '0.75rem', padding: '0.5rem', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '6px' }}>
-                  ⚠️ {uploadError}
+                <div className="error-banner" style={{ marginTop: '0.75rem', padding: '0.6rem 0.85rem' }}>
+                  <p>⚠️ {uploadError}</p>
                 </div>
               )}
               
@@ -358,7 +360,7 @@ export default function App() {
                 {schemaColumns.length > 0 ? (
                   schemaColumns.map((item, index) => (
                     <div key={index} className="schema-item">
-                      <span style={{ fontSize: '0.85rem', fontWeight: 500, wordBreak: 'break-all', maxWidth: '60%' }}>
+                      <span className="schema-item-name">
                         {item.col}
                       </span>
                       <span className="schema-type">
@@ -376,7 +378,7 @@ export default function App() {
               {schemaDdl && (
                 <div style={{ marginTop: '1rem' }}>
                   <span className="input-label" style={{ fontSize: '0.75rem' }}>Raw Table Schema:</span>
-                  <pre style={{ background: '#08080c', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.6rem', fontSize: '0.75rem', color: '#a78bfa', overflowX: 'auto', maxHeight: '180px' }}>
+                  <pre className="raw-schema-pre">
                     {schemaDdl}
                   </pre>
                 </div>
@@ -386,7 +388,7 @@ export default function App() {
           </section>
 
           {/* Main Execution Output Panel */}
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <section className="main-section">
             
             {/* Input Form area */}
             <div className="glass-card glow-card">
@@ -396,13 +398,13 @@ export default function App() {
                   rows="2"
                   placeholder="e.g., How many total products do we have in the Electronics category?"
                   className="text-input"
-                  style={{ resize: 'none', marginBottom: '1rem' }}
+                  style={{ resize: 'vertical', minHeight: '68px', marginBottom: '0.75rem' }}
                   value={queryInput}
                   onChange={(e) => setQueryInput(e.target.value)}
                   disabled={queryStatus === 'running'}
                 />
                 
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <div className="form-action-row">
                   <button 
                     type="submit" 
                     className="btn btn-primary"
@@ -421,20 +423,49 @@ export default function App() {
                   </button>
                 </div>
               </form>
+
+              {/* Sample Queries suggestions (shown before query / when idle) */}
+              {queryStatus === 'idle' && (
+                <div className="suggestions-container">
+                  <div className="suggestions-title">
+                    <span>💡 Suggested questions:</span>
+                  </div>
+                  <div className="suggestions-chips">
+                    {[
+                      "How many total products are in each category?",
+                      "What is the total revenue from completed orders?",
+                      "List the top 5 customers by total spending",
+                      "How many orders were placed by customers in the USA?"
+                    ].map((sample, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        className="suggestion-chip"
+                        onClick={() => setQueryInput(sample)}
+                      >
+                        {sample}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             
             {/* Error notifications area */}
             {errorMessage && (
-              <div style={{ background: 'rgba(239, 68, 68, 0.08)', borderLeft: '4px solid var(--danger)', padding: '1rem', borderRadius: '4px' }}>
-                <h4 style={{ color: 'var(--danger)', fontSize: '0.95rem' }}>Execution Warning</h4>
-                <p style={{ fontSize: '0.9rem', color: '#fca5a5', marginTop: '0.25rem' }}>{errorMessage}</p>
+              <div className="error-banner">
+                <h4>Execution Notice</h4>
+                <p>{errorMessage}</p>
               </div>
             )}
 
-            {/* Pacing Clarification Interruption Prompt */}
+            {/* Clarification Interruption Prompt */}
             {queryStatus === 'clarification' && (
               <div className="glass-card clarify-card">
-                <h3 style={{ color: '#c4b5fd' }}>Clarification Required</h3>
+                <div className="card-header-row">
+                  <h3 style={{ color: '#c4b5fd' }}>Clarification Required</h3>
+                  <span className="meta-badge">Human-in-the-Loop</span>
+                </div>
                 <p style={{ marginTop: '0.25rem', fontSize: '0.95rem' }}>{clarificationQuestion}</p>
                 
                 <div className="option-button-list">
@@ -444,13 +475,13 @@ export default function App() {
                       className="option-choice-btn"
                       onClick={() => handleClarificationSelection(idx + 1)}
                     >
-                      <span style={{ color: '#a78bfa', fontWeight: 600, marginRight: '0.5rem' }}>[{idx + 1}]</span>
-                      {opt}
+                      <span style={{ color: '#a78bfa', fontWeight: 700 }}>[{idx + 1}]</span>
+                      <span>{opt}</span>
                     </button>
                   ))}
                   
                   {/* Text entry option fallback */}
-                  <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
+                  <div className="custom-clarify-row">
                     <input 
                       type="text" 
                       placeholder="Or describe custom clarification here..." 
@@ -464,12 +495,14 @@ export default function App() {
                       }}
                     />
                     <button 
+                      type="button"
                       className="btn btn-secondary"
                       onClick={() => {
-                        const val = document.getElementById('customClarifyInput').value;
+                        const el = document.getElementById('customClarifyInput');
+                        const val = el ? el.value : '';
                         if (val.trim()) {
                           handleClarificationSelection(val);
-                          document.getElementById('customClarifyInput').value = '';
+                          if (el) el.value = '';
                         }
                       }}
                     >
@@ -487,9 +520,24 @@ export default function App() {
                 {/* 1. Generated SQL code card */}
                 {generatedSql && (
                   <div className="glass-card">
-                    <h3 style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>Generated SQL Query</h3>
-                    <div className="code-block" style={{ marginTop: '0.75rem' }}>
-                      <span className="code-lang-tag">postgresql</span>
+                    <div className="card-header-row">
+                      <h3 style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>Generated SQL Query</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span className="meta-badge">PostgreSQL</span>
+                        <button 
+                          type="button" 
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(generatedSql);
+                            setCopiedSql(true);
+                            setTimeout(() => setCopiedSql(false), 2000);
+                          }}
+                        >
+                          {copiedSql ? '✓ Copied' : '📋 Copy SQL'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="code-block" style={{ marginTop: '0.5rem' }}>
                       <pre><code>{generatedSql}</code></pre>
                     </div>
                   </div>
@@ -497,33 +545,43 @@ export default function App() {
                 
                 {/* 2. SQL execution table preview card */}
                 <div className="glass-card">
-                  <h3 style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>SQL Execution Result</h3>
+                  <div className="card-header-row">
+                    <h3 style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>SQL Execution Result</h3>
+                    {parsedTable.rows.length > 0 && (
+                      <span className="meta-badge meta-badge-success">
+                        {parsedTable.rows.length} {parsedTable.rows.length === 1 ? 'row' : 'rows'}
+                      </span>
+                    )}
+                  </div>
                   
                   {parsedTable.headers.length > 0 ? (
-                    <div className="table-wrapper">
-                      <table className="results-table">
-                        <thead>
-                          <tr>
-                            {parsedTable.headers.map((h, i) => (
-                              <th key={i}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {parsedTable.rows.map((row, rIdx) => (
-                            <tr key={rIdx}>
-                              {row.map((col, cIdx) => (
-                                <td key={cIdx} colSpan={row.length === 1 ? parsedTable.headers.length : 1}>
-                                  {col === null || col === 'None' ? (
-                                    <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>NULL</span>
-                                  ) : col}
-                                </td>
+                    <>
+                      <div className="table-wrapper">
+                        <table className="results-table">
+                          <thead>
+                            <tr>
+                              {parsedTable.headers.map((h, i) => (
+                                <th key={i}>{h}</th>
                               ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                          </thead>
+                          <tbody>
+                            {parsedTable.rows.map((row, rIdx) => (
+                              <tr key={rIdx}>
+                                {row.map((col, cIdx) => (
+                                  <td key={cIdx} colSpan={row.length === 1 ? parsedTable.headers.length : 1}>
+                                    {col === null || col === 'None' ? (
+                                      <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>NULL</span>
+                                    ) : col}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="table-scroll-hint">👈 Swipe horizontally to view more columns 👉</p>
+                    </>
                   ) : (
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem', fontStyle: 'italic' }}>
                       No rows returned from this query.
@@ -533,9 +591,12 @@ export default function App() {
 
                 {/* 3. Synthesized natural language explanation card */}
                 {finalAnswer && (
-                  <div className="glass-card" style={{ borderLeft: '4px solid var(--accent)', background: 'rgba(16, 185, 129, 0.02)' }}>
-                    <h3 style={{ fontSize: '1.05rem', color: '#6ee7b7' }}>Summary Answer</h3>
-                    <p style={{ marginTop: '0.5rem', fontSize: '0.95rem', lineHeight: '1.6' }}>
+                  <div className="glass-card summary-card">
+                    <div className="card-header-row">
+                      <h3>Summary Answer</h3>
+                      <span className="meta-badge meta-badge-success">AI Synthesis</span>
+                    </div>
+                    <p>
                       {finalAnswer}
                     </p>
                   </div>

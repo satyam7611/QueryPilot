@@ -3,7 +3,7 @@ import re
 # Approved tables in our database schema
 ALLOWED_TABLES = {"customers", "orders", "order_items", "products", "payments"}
 
-# Forbidden keywords (write/ddl operations)
+# Forbidden keywords (write/ddl/admin operations)
 FORBIDDEN_KEYWORDS = [
     r"\bDROP\b",
     r"\bDELETE\b",
@@ -14,7 +14,11 @@ FORBIDDEN_KEYWORDS = [
     r"\bCREATE\b",
     r"\bREPLACE\b",
     r"\bGRANT\b",
-    r"\bREVOKE\b"
+    r"\bREVOKE\b",
+    r"\bEXECUTE\b",
+    r"\bCOPY\b",
+    r"\bVACUUM\b",
+    r"\bCALL\b"
 ]
 
 def is_safe_sql(sql_query: str, allowed_tables: set[str] = ALLOWED_TABLES) -> tuple[bool, str | None]:
@@ -22,28 +26,31 @@ def is_safe_sql(sql_query: str, allowed_tables: set[str] = ALLOWED_TABLES) -> tu
     Statically analyzes a SQL query for safety.
     Returns (True, None) if safe, or (False, "reason") if unsafe.
     """
-    clean_query = sql_query.strip().upper()
+    clean_query = sql_query.strip()
     
     # 1. Reject empty queries
     if not clean_query:
         return False, "SQL query is empty."
         
-    # 2. Must begin with SELECT (or WITH for CTEs)
-    # Remove leading comments and whitespace
-    stripped_query = re.sub(r"^--.*$", "", sql_query, flags=re.MULTILINE).strip().upper()
-    if not (stripped_query.startswith("SELECT") or stripped_query.startswith("WITH")):
+    # 2. Strip single-line comments (-- ...) and multi-line comments (/* ... */)
+    no_comments = re.sub(r"--.*$", "", sql_query, flags=re.MULTILINE)
+    no_comments = re.sub(r"/\*.*?\*/", "", no_comments, flags=re.DOTALL).strip()
+    
+    # Must begin with SELECT or WITH
+    stripped_upper = no_comments.upper()
+    if not (stripped_upper.startswith("SELECT") or stripped_upper.startswith("WITH")):
         return False, "Query must be a read-only SELECT or WITH statement."
         
     # 3. Check for multiple statements (SQL injection attempt via semicolons)
-    # Split by semicolon and verify there are no commands after it
-    statements = [s.strip() for s in sql_query.split(";") if s.strip()]
+    statements = [s.strip() for s in no_comments.split(";") if s.strip()]
     if len(statements) > 1:
         return False, "Multiple SQL statements are not allowed (semicolon injection protection)."
         
     # 4. Check for forbidden keywords
     for keyword in FORBIDDEN_KEYWORDS:
-        if re.search(keyword, clean_query, re.IGNORECASE):
-            return False, f"Forbidden keyword detected in query: {keyword.replace(r'\\b', '')}."
+        if re.search(keyword, no_comments, re.IGNORECASE):
+            clean_kw = keyword.replace(r"\b", "")
+            return False, f"Forbidden keyword detected in query: {clean_kw}."
             
     # 5. Check if referencing unauthorized tables (data exfiltration protection)
     # Identify Common Table Expressions (CTEs) so we don't falsely reject temp CTE table references

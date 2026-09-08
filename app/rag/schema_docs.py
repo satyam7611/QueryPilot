@@ -66,3 +66,55 @@ CREATE TABLE payments (
         "context": "Use this table when verifying if orders have been paid, analyzing transaction dates, tracking revenue collection, or identifying payment failures."
     }
 }
+
+import hashlib
+import json
+from typing import List, Tuple, Dict, Any
+
+def build_custom_schema_card(
+    dataset_id: str,
+    table_name: str,
+    filename: str,
+    columns_metadata: List[Tuple[str, str, str]]
+) -> Dict[str, Any]:
+    """
+    Generates a structured schema card and deterministic schema hash for an uploaded dataset.
+    columns_metadata: List of (original_col, sanitized_col, postgres_type)
+    """
+    # 1. Deterministic schema hash for change detection & caching
+    meta_repr = json.dumps([(c[0], c[1], c[2]) for c in columns_metadata], sort_keys=True)
+    schema_hash = hashlib.sha256(f"{table_name}:{meta_repr}".encode("utf-8")).hexdigest()[:16]
+    
+    # 2. Build annotated DDL
+    ddl_lines = [f"-- Table: {table_name} (Source: {filename})", f"CREATE TABLE {table_name} ("]
+    col_summaries = []
+    for orig, sanitized, db_type in columns_metadata:
+        ddl_lines.append(f'    "{sanitized}" {db_type}, -- Original Column Name: "{orig}"')
+        col_summaries.append(f'"{sanitized}" ({db_type}, source: "{orig}")')
+        
+    if len(ddl_lines) > 2:
+        ddl_lines[-1] = ddl_lines[-1].rstrip(',')
+    ddl_lines.append(");")
+    ddl_str = "\n".join(ddl_lines)
+    
+    # 3. Context & Embedding text (schema/metadata only, never raw row values)
+    description = f"Uploaded dataset table from file '{filename}' with {len(columns_metadata)} columns."
+    context = f"Columns: {', '.join(col_summaries)}."
+    text_to_embed = (
+        f"Dataset: {filename}. Table: {table_name}. "
+        f"Description: {description} "
+        f"Columns: {', '.join(col_summaries)}. "
+        f"Context: Use this table when querying records from uploaded file '{filename}'."
+    )
+    
+    return {
+        "dataset_id": dataset_id,
+        "table_name": table_name,
+        "filename": filename,
+        "schema_hash": schema_hash,
+        "description": description,
+        "context": context,
+        "ddl": ddl_str,
+        "columns": columns_metadata,
+        "text_to_embed": text_to_embed
+    }

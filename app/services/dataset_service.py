@@ -283,6 +283,19 @@ def process_and_save_dataset(
             
             conn.commit()
             print(f"[DatasetService] Successfully processed and seeded table '{table_name}' for dataset {dataset_id}")
+            
+            # 6. Index Schema in RAG
+            try:
+                from app.rag.retriever import index_dataset_schema
+                index_dataset_schema(
+                    dataset_id=dataset_id,
+                    table_name=table_name,
+                    filename=filename,
+                    columns_metadata=columns_metadata
+                )
+            except Exception as embed_err:
+                print(f"[DatasetService Warning] Initial schema embedding generation deferred: {embed_err}")
+                
             return dataset_id
             
     except Exception as e:
@@ -322,6 +335,16 @@ def delete_user_dataset(dataset_id: str, session_id: str) -> bool:
             cur.execute("DELETE FROM datasets_metadata WHERE dataset_id = %s;", (dataset_id,))
             conn.commit()
             print(f"[DatasetService] Successfully deleted dataset {dataset_id} and table '{table_name}'")
+            
+            # Clean up RAG schema index and query cache
+            try:
+                from app.rag.retriever import delete_dataset_schema
+                from app.core.cache import query_cache
+                delete_dataset_schema(dataset_id)
+                query_cache.invalidate_dataset(dataset_id)
+            except Exception as e:
+                print(f"[DatasetService Warning] Failed to delete schema/query cache: {e}")
+                
             return True
     finally:
         conn.close()
