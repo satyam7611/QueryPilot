@@ -35,3 +35,8 @@ class AgentState(TypedDict):
     
     # Final Output
     final_answer: Optional[str]
+    
+    # Dataset & Cache Context
+    dataset_id: Optional[str]
+    schema_hash: Optional[str]
+    is_cache_hit: Optional[bool]

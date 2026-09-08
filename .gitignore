@@ -149,4 +149,5 @@ readme.txt
 *.db
 *.sqlite
 *.sqlite3
-
+node_modules/
+ENGINEERING_AUDIT.md
